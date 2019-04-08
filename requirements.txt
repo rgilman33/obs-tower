@@ -1,0 +1,7 @@
+git+git://github.com/Unity-Technologies/obstacle-tower-env@v1.2
+aicrowd-repo2docker
+matplotlib
+torch
+torchvision
+opencv-contrib-python==3.3.0.9
+pandas

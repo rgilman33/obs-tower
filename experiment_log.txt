@@ -1,0 +1,466 @@
+gcloud compute ssh cloud-atlas-3-vm --ssh-flag="-L" --ssh-flag="8888:localhost:8888"
+git lfs track "*.torch"
+git lfs migrate blah blah
+
+
+4.7
+note: gathering orbs is very important. start at 2k, after ten levels of gathering orbs we're at 20k! this will be important going forward. 
+
+Note: The majority of human actions are repeated at least once, but about 10% are a single frame. This has implications for frame skip. 
+
+
+4.6 trained overnight, down to low 3s. believe it was bc i left entropy loss turned up to 1/10, indeed probs look very very flattened. no e notation at all! Turning back up to 1000 for a bit, though probably actually not important. probably will transition to vae training soon. This is an interesting note: entropy loss of this magnitude definitely was too large for a trained model, probably fine to start off like this but definitely not fine to hit a trained model w this. 
+
+Stopping training. BestC currently at 5.5, five_action currently at 3.5, though this can probably be increased w less entropy. Plan now is to gather more data and train vae, lstm more. 
+
+BACK ON LOCAL MACHINE. 
+returns, should also include 1st derivative term, slope of returns at that point, is it increasing or decreasing?
+
+shaping returns. reduced gamma to .95, reduced importance of floor completion to .5. resetting returns to 0 at start of each floor. check out image at returns.png. these look nicely shaped now. 
+
+
+
+
+4.5
+trained overnight, still at around 4.7. Simply removing human guidance to see if that returns us to higher play. Allow to play all day, need to verify current setup before doing further experimentation. lr6-4, start w 25e just training on existing data. Truthfully, we're very close to what we were before, maybe we should just continue experimenting from here?
+
+if this doesn't fix it, go back to previous setup w sigmoid activations and no softmax. try that. 
+
+after removing human guidance, if anything play DETERIORATED, perhaps stayed the same. definitely didn't improve. granted, only did initial 25e + a few hours of play/train, but still... This is actually good, it indicates we'll be able to use guidance as currently formulated to help the agent improve. 
+
+reverting C back to previous setup w sigmoid, no softmax. lr-3. Reloading w bestC and training for a while. first verify that doesn't deteriorate--if anything should get better, we're just giving more training to same model. Once verified, try adding human guidance back in, see if we can get same good scores w smooth play as we'd accomplished w guidance version below. 
+
+NOTE: actually may not work as expected bc memory is loaded w play from a different agent. it will train a few epochs on this before emptying out this queue. 
+
+Retraining on fresh data generated from bestC, above wasn't a true test. After generating data w bestC, avg score was: 4.9. this is our baseline, tested on 36 games. now training for a few hours, see how compares. after verify this, attept to use frameskip / action repeat. 
+
+Nevermind, going directly back to imitation learner, was at 4.7 this morning, which is very similar to current best model, but actions are smoother. SHOULD HAVE SAVED THIS ONE!!! training w 5% human guidance, each one score one. bringing entropy back up to 1/10 or action loss. training 6-4 for a while. decrease memory to 35k from 55k (had increased it bc bringing in neg, which not doing anymore). get back to 4.7 then experiment w skipframe. also note trained 30e w 10% guidance lr3-4, before starting this act-train loop. increased to 10% human guidance, get this show on the road. after couple hours, back down to 5%, lr down to 3-4. appears that to a point can almost save and return to offline work. 
+
+SHOULD HAVE run bestC for many epochs to get true idea of current baseline. 
+
+turning lr down to 1-4, training overnight. 
+
+
+
+
+
+
+4.4
+model definitely deteriorated. avg scores in the 2s and 3s. checking vid. more half-assed going through doors and back out. actually saw a couple useful jumps, and much less jitter. doing worse bc misfiring going through doors and frequently going backwards. 
+
+BUG: in calculating entropy, was taking mean across all obs, rather than for only a given obs. this would encourage flatness across all actions all obs, rather than all actions for a single obs. Curious how much this would have harmed model. also dividing by more, to keep same scale. entropy loss still about 1/10 size of action loss. 
+
+restarting w bestC, increasing lr to 6-3. still using only 5% human actions. if entropy miscalc was problem, should see this model deteriorate in a few hours (higher lr). 
+
+trained few hours, definitely trending downward. Uncomfortable bc i don't know if it's the 1) increased entropy 2) new linear output w softmax 3) the addition of imitation loss. or 4) something else like increased lr. Wish i could be running three notebooks simultaneously to test this. Currently giving it more time to train, try to see if can improve.
+
+Once stabilize, introduce skipframe / repeat action. this was crucial for lstm WM training w drone footage, and is standard in RL. 
+
+wait, i can get another K80 GPU and use both! Yes. 
+
+avg at start was 5.0, after hours of training down to 4.5. watching vid. much smoother without jitter, yet she appears dumber. more insistent on going back through doors she just visited. saw a well placed jump. definitely more jumps in general. overall, solved jump and jitter, yet agent seemed to get a slight bit dumber. 
+
+turning lr down to 3-4, dividing entropy by 10 more, so now should be 1/100 of action loss. training overnight. 
+
+NOTE: vae and lstm can be trained in kaggle kernel or google colab. should generate more human data, probably about 10x as much. focusing on levels 0-10, also training to see returns. 
+
+NOTE: need to ensure returns being calculated correctly, e.g. not sending them back to previous games. probably not even sending them back to previous levels. need to somehow visualize this, as well as actions, prob histograms, in a UI type of environment. Really make sure everything is correct, really get a good idea of how things are progressing. 
+
+I like idea of letting agent play, stepping in when necessary. This could quickly correct bad behavior. Human trajectories never leave a reasonable path, don't teach how to recover from bad place. Stepping in in this manner could show how to recover from bad place. Having insertion pt for human guidance could be very valuable when it comes to puzzles later on. 
+
+Tomorrow, check scores. Consider either 1) gathering more data and vae lstm upgrade, or 2) implementing skipframe action repeat. 
+
+
+
+
+4.3
+watched vid. simimlar. a few places get stuck, could get out w a jump but don't. same behavior w key door, very persistent. same jitter . also got caught for a bit in same spot, loop. does not make one think 'intelligent'. scores slightly lower, only diff is made activation nonlinear, added softmax, added some negative returns. 
+
+adding imitation for guidance stabilization. starting w random human chunk of 20% size agent data mixed in w each batch. one issue, returns are calculated slightly differently for human--gamma .95 (old value). training for awhile. remember still have good old model at bestC.torch. this one is saving to trained_5_action.torch.
+
+changing returns for all human actions to 1, essentially saying 'whatever human did is correct, regardless of returns". reducing to 10% of agent batch to avoid overpowering innate training signal. 
+
+going back to only using positive returns. feels like cleaner approach. lr3-4. keeping mem at 55k, means doubling the amount of training on each obs (bc halving amount gathered each time bc no neg). remember, goal is to nudge agent to 1) stop jittering, 2) jump when necessary. 
+
+may want to consider entropy a higher weight. yes, let's do that. jumps look so saturated at 1.000. shouldn't ever be that confident. was dividing entropy by an additional 500, now dividing by nothing. action_loss 0.109 entropy loss -0.010. Entropy about one tenth the magnitude of action loss. 
+
+we need to get rid of jitter, make jump possible, reliably get through first five levels before moving to further train VAE and lstm. don't want to train lstm on jittery seqs. 
+
+after about an hour, we are getting less jitter it appears, jump probs still too skewed. few more hours, definitely just going straight a lot more. still very little jumping, and jump probs are very low. 
+
+score seems to be decreasing slowly. definitely not climbing. viewing vid. smoothness is nice, but agent a bit dumber. gets caught in similar situations. even more going back to prev came through doors. can jump, but doesn't do it well or to great effect. 
+
+training more, going down to human batch size of 5%, but since each one has score of one, will still have decent effect on training. 
+
+
+
+
+
+
+4.2
+
+changing loss calculation to more easily facilitate bringing in negative rewards. using vanilla policy gradient technique. training for awhile, still only positive returns, to verify that loss doesn't deteriorate real bad. why scores seem bad right off the bat? did one epoch, is that enough to break it? could be chance. note, still have good model saved at bestC
+
+changed activation to leaky relu, softmaxing each action set separately then cat back together, after that same as before. Allowing in negative rewards, those there are only few of these probably bc higher gamma. 
+
+thinking about it more, i actually like our loss method better: treating chosen actions as true, training as imitation means we're encouraging some actions and discouraging others each step. using policy gradient method, only affecting prob of chosen action, actions only ever receive upward impetus. reverting to old method, though keeping softmax and leaky relu. 
+
+train this for awhile, see progress. if stable, reintroduce negative rewards as we did before, hopefully softmax will cure previous issue. don't multiply negative rewards as big as we did before, keep them the same. nevermind don't want to wait. adding in negative rewards now, continuing training. I want these negative rewards bc even if now don't currently have strong negative things, in future definitely will. Also, want agent to start learning things NOT to do, e.g. don't stand there not jumping while presented w step. 
+
+adding negatives almost doubles size of data collected each time, so almost doubling experience replay memory size to 55k obs to keep training load constant. 
+
+realized maybe don't want nonlinear activation function on C. Checked world models, indeed no activation, just straight linear. We're doing same thing now. Linear followed by softmax for each set of actions. training more.
+
+Problems: 
+1) jump probs too low, not seeing jump possibilities in the probs. actually, saw one. would have to view vid to see if actually not jumping when should. 
+2) straight probs nonexistent. why does model insist on jittering?
+
+what if we mixed in human trajectories alongside agent ones? after all they train w same loss. could nudge agent to make play more human-like, which is a decent prior. i like the sound of this idea. using human data as guiding star, a seed of 'correct' behavior. would be useful for difficult puzzles as well. reminds me of karpathy's fiction piece where humans 'guide' robots, though robots still take the lead. Explore this option tomorrow. 'stabilizing guidance'.
+
+
+
+
+
+
+
+successfully made submission! man was it a saga. 4.4, not bad. 
+Holy goddamn hell git made it hard there! Obstacletower folder ITSELF required lfs. Process was, 
+rm -rf .git
+
+git init
+git remote add YOUR_URL
+git lfs install
+git lfs track file
+git add .
+git commit -am “initial commit”
+git tag -am “test” tag
+git push -u origin master tag
+
+had to add git lfs track "myfolder/**"
+
+
+gitlab-origin is remote we submit to, as per Unity page instructions
+
+
+submission saga:
+first had trouble building docker, had to get the right packages in the requirements.txt file, not overwrite the existing one though. Next big thing was had to do both those docker commands from different terminals, i was just doing the first and watching it time out, being an idiot pretty much. Next thing was git lfs, ObstacleTower folder ITSELF had to be put in lfs. we have now actually made a submission, let's see if it goes through... wow who knew this would be so epic, just to get my shitty agent submitted. 
+
+3.29
+trained overnight. (5.1770000193268064, 4.9215000179782509)
+
+have a best model w 6.5 ish. downloaded to local. confirmed that performs well, mean of 5.7 score, 4.3 floors. 
+
+
+3.28
+trained overnight (2.5535000124946237, 2.8030000132322312) trending right direction! saving model. also saving at bestC.torch. 
+
+just checked rainbow params, very different than ours!
+gamma: .99 (.95)
+bs: 32 (120) they're working directly w images though, so has to be smaller
+lr: 6-5, (6-4), this could be related to smaller bs though
+
+EXPERIMENT: increasing gamma to .99, changing nothing else. now instead of avg 4.5k obs per cycle, we get 6.5k. to keep same training ratio also increasing memory to 35k. after few hours: (2.5835000125691296, 2.5785000131651761) 
+
+decreasing lr to 3-4. after couple hours: (2.8880000139027833, 3.0375000146403908). testing vid run(5), similar. locks throw her off, can't see key very well i think. should add num_keys to state to facilitate connection btwn key and locked door. backtracks often. never goes completely straight! loves to go back into first level door, as it looks like exit door. Always jiggling btwn left and right, makes for strange viewing... forcing start on level 0 for a bit. worried locked doors are confusing training, ie confusing fact that some doors need special treatment. agent going up to door then turning around, could be bc locked door confused it. Before forcing to deal w doors, need to make sure can see keys, and should predict 'key' in same way predict rewards. is ijtteryness bc left-right has higher entropy than just straight? 
+
+keys first appear in floor five. we're currently breaking at floor 6, meaning allowing to complete 6 floors, last 1 of which might have keys. scores are looking good. we might just be able to squeeze in over the 4 floors mark.
+
+trained for few hours: (4.9030000176280737, 4.9490000180155036) right before bed. saved best model here. 
+
+turned lr down to 1-4, training overnight. 
+
+
+
+
+3.27
+trained overnight, (1.5825000084564089, 1.8760000096261502). 
+turning bs back down to 120, turning minipochs back to 3. lr down to 6-4, train until get to 2.5, which is what accomplished below w same similar setup. Once there, try turning discount inv up to .98, but save state dict first!!
+
+trained half day, 1.8 to 2.1. right trend, but slow... continue training. increased minipochs to 5 from 3. should also implement sliding window. biggest time suck is acting in env, not in training C. should try and squeeze more out of data. IMPLEMENTED. window sz of 25k. each set gives about 4k so each obs will be trained on about 6 times each. do a single minipoch each cycle. training on it now. effect should not be major, but should give more variety during training, at cost of more off-policy. trained couple hours, still at 2. training overnight. 
+
+
+
+
+
+
+3.26
+trained overnight, up to 1.4. Training further. few more hours, to 1.77. Continuing. this is good indication. our 3x minipochs is speeding training i believe, to no detriment. 
+
+can also try much larger bs w high lr. 
+
+trained few more hours, at 1.62 (noise). doubling bs and minipochs to 240 and 6, trying to get this thing training quickly. 
+
+
+
+
+3.25
+trained overnight, eff! scores down to 2.3. probs all weird, BOTH jump probs almost 1. SHOULD HAVE SAVED BEST MODEL WHEN IT OCCURED. now have to try and recreate. removed apparatus from yesterday, training imitation 10e lr4-6 to reset to something normal, then training again as yesterday. increasing floors to 4 to allow diversity in training. removing negative rewards, if weighting them ruined model, maybe don't want them at all. decreasing entropy div to 100 from 1000 until scores seem to regularize a bit--probs are NOT divided evently amongst actions, both jumps have a lot, turns have little. also increased lr to 8-4 and doubled n steps per training cycle, in case having larger set was beneficial when including negs. 
+
+when normalized, div entropy by 1000 again, recreate process below to get to 3.6 model. 
+
+Wow, scores back down really low :( maybe was ALSO a mistake to train heavy imitation, essentially resetting model. was at 2.3, now probably below one. 
+
+SHOULD HAVE BEEN SAVING MODELS, OR COMMITTING GIT!!!!! fool, w a 3.6 model, could have finetuned to get to 4 floors!!! AGHHH
+
+maybe it just needs to train for much longer... maybe below updates didn't add anything. maybe just need to train for days?
+
+allow to train all day, see if improving. if so, decrease lr to 6-4, decrease entropy to div 1000. train more, perhaps for days... after that, reduce number of floors training on, really try to get to 3.6 model or above. LITTLE TIME LEFT. 
+
+DON"T MAKE DECISIONS RIGHT WHEN GET UP FROM NAP, if more alert, might have thought to save model before change. 
+
+trained for an hour, probs are not skewing correctly still. starting from scratch w even more entropy, only div by 100 now. first train imitation for 100e lr 8-4, then train as before. 
+
+trained a few hours, score avg .56. NOTE: now making do three mini epochs for each round gathered. Decreased entropy div by 500, from 100 before. continue training. 
+
+
+
+
+3.24
+trained overnight, scores up from 2.5 to 2.7, though keep in mind there is variability here. could also simply be the reduction in lr. viewing vid now. result: movement is very good, consistent door seeking, much less wall crawling. problem is still turning around and going back (efficiently and skilled) through prev doors. Also gets stuck in minor loop in same spot as before, corner to corner to door to corner. prefers clockwise, right turn motion. didn't see a single jump, though DID see spot where jump was necessary, instead agent just tried persistently to go through, was correct that it was right direction. also when faced w key door, tries persistently to get through but can't w out key. Sometimes still doesn't notice yellow sign doors as well, or opens first door but not second. 
+
+things to do: 
+- reduce # of starting levels to more specialize in relevent section. goal is four levels for first round. TRYING THIS NOW. reduce to 0,2
+- train again on imitation to bring jump back into the mix DONE, testing now
+- cat a few previous states together to feed into C
+- Ideas below: bigger C, more M train. 
+- Increase weight of neg returns to force agent to not backtrack
+
+experiment one: simply reduce # of starting floors. train couple hours, then view results. Avg score is now 3.3, improvement! probably model not any better, just being tested on easier levels. 
+
+continued: doing 25e lr3-4 imitation to make jump possible again, then train more w current setup, ensure it levels before doing next test. before imitation, all jumps were .999999 no jump, after see some in 70s and 80s in im, not in rl. NOTE: since this is single layer C, adjusting jump should NOT affect other actions. trained few hours up to 3.57. training more today. few more hours, back down to 3.3 :(
+
+experiment two: increase inv discout to .98 from .95 to try and send returns further back (solve the loop issue). ACTUALLY, let's weight neg returns more, see if that does the trick. maybe both. 
+
+Multiplying neg returns by 10. before this, training jump again on imitation. trained rl a few hours, down to 2.6! jumpm probs much more even, maybe the medicine hurt a bit? increase lr 6-4 train overnight. 
+
+
+
+
+
+
+3.23
+
+trained overnight, scores up to 2.5 from 2. Still poor but improving. Entropy turned down, probs definitely beginning to skew more. unsure if this is good, acceptable, or bad. last night turned lr down to 6-4 from 8. Testing vid. interesting. definitely better. good door seeking behavior. often going back through previously opened doors--sometimes way back, further illustrating ability to doorseek, but also showing doesn't have a good concept of where has been. Sometimes gets confused in same spot, making loop around from corner, to door just came through, to other corner where if she just turned left would see something interesting, but doesn't turn left. Had hoped negative reinforcement would begin to eliminate this behavior. Also, she hardly ever jumps... 
+
+Trend is good, though slow. Continue training. I suspect bigger C would be beneficial. Training allday, give it time to catch. Focus on Juno instead today... Might be good to be incorporating more cycles of vae+lstm training. Or maybe just let it train more :) Pretty sure RL agents can take a long time to train... she never jumps but didn't see in video place where she needed to jump but didn't.
+
+increased entropy ratio a bit, give jump a chance. 
+
+trained all day, still around 2.5, maybe stuck there? turned lr to 3-4 from 6, training overnight. 
+
+
+
+
+3.22
+
+Trained overnight, scores slightly better, to 1.24 rewards avg per game. still very poor!
+
+Just watched a vid. Better. Often goes back through doors it came from. sometimes seems to struggle to turn left, definitely preference for right turns. often struggles to go through BOTH doors, often just opens one and then continues on, especially when doing wall tracing behavior. 
+
+EXPERIMENT: weighting loss by returns to emphasize high returns and vice versa. Also resetting hidden state after each level. Training for a couple hours to see result. RESULT: good, i believe. Started off 1.5 avg, down to 1.3 avg after couple hours. this compared to 1.2 avg from start point. hopefully just noise, but could be positive effect of hidden state refresh combined w negative effect of return weighting, though i suspect noise. first half had run of really good scores. 
+
+now also bringing in some neg reward states. only those w max negative reward. treating in same way, so they also get multiplied by weights at the end, which makes them negative. multiplying action loss by ten now bc total loss was lower since bringing in small neg losses, this makes action loss actually bigger than before, 1.2 instead of .2, we'll see if begins to get too skewed. about half states are now negative states, though they'll be weighted much smaller. Goal of this exercise is to speed agent up, make her stop going back into doors she's opened already. train for a few hours then view result. if this trends well, continue training for a day or so. result: appears to be improving. mean score is 1.7, up from 1.5. training for a day, revisit then. 
+
+
+
+3.21
+
+results: perhaps improving a bit? definitely not regressing. lots of zeros, many ones and twos, some threes and even a few fours and fives. viewing vid: appear better. still have wall tracing behavior, reliably seek out doors, i suspect not getting a clear view of them. Also perhaps being thrown off by too much entropy. Things to try:
+- decrease entropy even further, allow to be confident about certain actions. TRYING NOW good i think
+- allow returns to flow further back in time (lower discount rate)
+- bring in some observations w no positive rewards, ie flip sign and discourage some actions. goal is to get agent moving faster. TRYING
+- train vae more, w returns, to recognize yellow doors. 
+- increase lr a bit, currently at lr3-4 but since shuffling and using experience replay a bit, can perhaps jack back up. TRYING NOW good i think
+- increase C size, ie another layer
+
+experiment one: turning up lr to 8-4, dividing entropy loss (already divided in fn) by 1000 rather than 100. checkpoint saved at 5_action.torch, so can revert if actions get too skewed. trained couple hours, improving i believe. Allow to train all day, if nothing then move on to text ideas above. 
+
+
+3.20
+trained overnight, didn't really improve :(. Reverted back to yesterday's post-jump agent, created vid capture apparatus, viewed vid replay: agent displays strange, wall-following sidewinder behavior, often going through target doors backwards of sideways. hard to watch. 
+
+Hypothesis: limiting actions will increase training efficiency, lower odds of strange behavior. Eliminating sideways movement, forcing always forward, that eliminates 6 actions. Only thing left is pan and jump. Start from human imitation. 
+
+Testing directly from this, no RL train: lots of going into corners. Not effective agent. Verified that actions only allow pan and jump. Now training w RL. 
+
+trained for a couple hours, vid looks much better. first door went right to it, second door a bit of dillydally, but through it as well. 
+
+adjustment: 2/3 of time, restarting on same floor that died on. also, doubled steps num to 600. RESULT: hard to tell. a few get into 4 and even a 5, but substantially more zeros now. cost of sometimes higher was lost performance on easiest levels. Which makes me think agent mostly memorizing first levels. interestingly, became really likely to jump, uncertain why. training a bit imitation to force jump back down. also now randomly starting on level btwn 0 and 4, also turning lr down to lr-3. trained a bit, watched vid: still likes to wall crawl. good at seeing big doors w arrow, so much so that frequently goes back into door she came from. has a hard time seeing other doors, not sure she sees them at all. 
+
+adding small experience replay to reduce autocorrelation. gathers 1-2k dataset, shuffles, then trains through it bs 120, lr3-4. seems to gather a few games worth of obs. 
+
+
+3.19
+woke up to see that C is improving! almost no scores of 0, many more of 2 and above. some scores of 3. how does it get score of 3 w no jump? 
+
+that was dividing entropy by 10 (in addition to entropy loss divisor in fn), but still looks like too much spread, also, we saw those increases AFTER reducing entropy loss weight, so doing that further here. now dividing by 100, see how that goes.
+
+RESULT: training well. Almost no zero scores, mostly btwn 1 and 2 w a few 3s. definitely trending upwards. NOTE: typical loss looks like this action_loss 0.15687799453735352 entropy loss -0.0005205560592003167
+
+Now allowing back in jump action. I figured it would cause scores to go to zero immediately, but surprisingly no. Letting train overnight, see where we get. 
+
+Other things to note: should only run relevent states (those w rewards) through C; should accumulate many states into experience replay, allowing us to use less correlated batches. will overtraining on first floors hurt performance later? vice versa? how to ensure even training across levels. 
+
+actually, paused training for a bit to go back to imitation loss, train only on jump actions for a bit, want to reduce prior liklihood of jump before training overnight. Doing 10 epochs, then back to RL train. good, jump probs down substantially. 
+
+
+
+3.18
+changing loss function a bit. Seeing as we were able to train C decently w imitation loss, and still can't quite get good paradigm for loss fn in RL--probs either too flat or to entropic, so emulating imitation loss in RL. Only training on obs where returns > 0, then in those obs treating the actions taken same as human actions, reinforcing them same as imitation, with MSE from probs. using exact same entropy loss. lr8-4. starting off, entropy loss is better than trained imitation above, which makes sense as model is less confident about preds. imitation loss worse than above, which makes sense bc we're learning to 'imitate' different style of play. magnitudes are the same. Train for a long time, monitor results as was doing above. 
+
+loss fn: "only train on pos return obs. treat actions taken in those situations as 'true' and run imitation loss on them w probs (that the actions themselves were sampled from)"
+
+note: jump action is still being forced off. want to reliably get to level two before allowing it back in. 
+
+as training progresses, probs are flattening out even more, entropy loss improving while 'imitation' loss gets worse. 
+
+Trained all day, above trend continued. action loss up to .21, entropy down to -.006. Training again from scratch, this time entropy / 10.
+
+3.17
+get C up and running. Currently training, but results getting skewed again. more entropy! introduce wieghting. entropy loss .5, both actions summed .5. training many e, come back latr. 
+
+3.16
+decided to start w imitation learning / behavioral cloning approach. First step, get C to imitate our actions. 
+
+like before, was converging on over confidence. introducing entropy to encourage humility. first, turning entropy loss way up, should see probabilities converge on equal. verified, all converge to same value. now trying entropy / 10., see how that trains. still a bit to skewed. now no div, just entropy. that flattens out pretty quickly. div by 5, that puts magnitudes about equal.
+
+saving image causes probs to go wacky?? use plt.imshow is fine, pytorch display_image was doing it?? 
+
+when imitation training, entropy loss same magnitude as imitation loss. This seems to train well. When init w this model, gini can sometimes get 2.2 score, which DECREASES as we train RL style. actually, trained again from that saved space, not very good this time. maybe that run w multiple 2.2s was a fluke. 
+
+after imitation train, action distributions approximately softmaxish, although not using softmax. after training RL, that begins to skew, all probs begin to rise. We should be enforcing softmax across appropriate spaces. 
+
+3.15
+C up and running, not performing well yet. Converging on single action, so introduced entropy. loss about same magnitude as action gain. 
+
+3.13
+interesting that z-seqs are so noisy. is vae overfitting to the lines on the walls? capturing elements we actively want to ignore?
+
+testing lstm gen, vae recon. first training a bit at lr-4. success! ish... good chunks of well-genned seq. current lstm: 2 layers 1024,  5 gauss, bptt 75-150. trained for a while at 8-4, then few minutes at 1-4, loss to -.16. drops all at .1. even though true seqs are noisy, lstm seems able to memorize decently well. 
+
+If this is like WM, we can memorize short seq (currently 9k steps), then must gather significantly more data to begin to generalize. seems like there's a no-man's-land where there's too much to memorize but not enough to generalize. 
+
+One problem remaining is that not picking up on small items. as mentioned earlier, this shouldn't hinder completion of first five levels.
+
+time to hook up C? Yes, let's do it offline. 
+
+
+
+3.12
+
+600z wasn't doing very well. after a couple days training, doesn't look very good. streaky. Reason for doing this was smoothing out seqs, but instead we're now training for awhile at lower lr, before was all at 1e-3. training for couple hours, then check out seqs. 
+
+
+3.11
+
+tested recon vids straight from vae. excellent, except for still not showing small items. this is fine for first 5 levels, don't worry about it now. As long as we can see doors, that works for now.
+
+Testing gen after run through lstm. gets stuck in loop, not very good. Trying w fewer epochs on the lstm. same? not doing loop, but gen not very good. testing w only 100e. 
+
+can memorize seq len 100. can't seem to get better for full data. turned drops down to same as WD (.1), were higher before. same. increaseing to 3 layers, bptt 75-150 (was 50-80 before)
+
+even seqs straight from vae don't look smooth. redoing vae + lstm to mimic WM closer. increasing z to 600. Test this on lstm, see if seqs smoother, see if can train now. if can't, copy paste WM lstm into notebook and use it direclty. we shouldn't have tried to improve WM algo until getting it working. shouldn't have taken from fastai's version, when we know prev version works. should have just copy pasted what knew worked, THEN optimized. 
+
+vae is training on 600. lstm, testing w flipped sine data to ensure it can gen that well. 
+
+discovered a bug in data prep, where we go from one long seq to bs small ones. Takeaway: trust nothing. test everything. visualize seqs before training on them. 
+
+retraining on flip sine data. success! ok, works again. back to training on VAE output. these are of length 300. vae currently training on len 600, can revert to 300. 
+
+tried on 300 data back through vae. a couple coherent seqs, not really good though. increase bs to 80, acc steps down to 1. continuing train vae. I believe lstm is good now, but we need vae to output smoother seqs. 
+
+
+3.10
+
+w reward loss, recons all look pretty identical--blurry dark w geni in the middle. diviidng reward loss by 1000 to verif that continues to train as before. 
+
+
+3.9
+prepped metadata and actions. bringing meta-returns into vae, hypothesis is that forcing to pred rewards will make it "see" items of interest better. training now, will analyze results after give chance to train for awhile. bringing in this extra head definitely made image quality drop quickly. hopefully builds back up again. reward loss and feature loss are approximately equal, ae loss about 1/10 of those. actually, after training a bit, r loss about 1/10 as well, on par w ae loss. 
+
+TODO: see if this method allows vae to see items better. if so, move on to training lstm. 
+
+
+3.8
+changed dataloader to image folder, for memory reasons. Also set up gym to bootstrap initial training, rather than random samples. Currently training on 20k samples. 
+
+vae seems to be struggling w small details: time orbs, keys, door logos--all which happen to be critical to game success! How to make it 'see' these objects? If hook up to C, gradients would pull through, but i like it modular like this. Train it to also predict rewards based on input img? that would seem like a good, simple thing to implement. Requires setting up reward calc apparatus. 
+
+TODO: setup reward calc apparatus. Train VAE to also predict a frame's rewards, along w reconstructing it. 
+
+Current reward has 1.0 for completing a floor, 0.1 for getting key, opening door, solving puzzle. 
+enrich this w time data, ie goes down a small amount each step, goes up when get orb. 
+
+
+
+3.5 continued
+
+Getting up and running again on local machine. had to pip install gym==0.10.5, bc getting gym error. works now.
+
+had to install git-lfs again. sudo apt-get install git-lfs, followed by git lfs install
+
+on gcp, had to pip install opencv-python, whereas local use apt-get
+
+overfitting on 250 images to ensure apparatus works. after that, train vae for real on 10k images.
+
+taking away jump while gather data. got vae up and running, doing fine. not skipping 4 frames as before. seems to be too blunt. watched a vid fresh from latent, couldn't really follow. 
+
+3.5
+
+RECIPE for obstacle-tower gcp setup w pytorch: install tensflow ami, conda on top, pytorch via conda w that, manual install obs-tower. Money!
+
+Note: nvidia-smi gives cuda version. 
+
+follow instructions as per 
+https://github.com/Unity-Technologies/obstacle-tower-env/blob/master/examples/gcp_training.md
+
+when redoing w p4, also had to do: delete a line of “UserDisplayDevice” in “Screen” section
+otherwise "no screen found"
+
+log into gcp w port for jupyter
+gcloud compute ssh cloud-atlas-3-vm --ssh-flag="-L" --ssh-flag="8888:localhost:8888"
+
+don't use virtual env (messes w jupyter)
+
+install conda
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh NOT THIS ONE, use anaconda instead
+wget https://repo.continuum.io/archive/Anaconda3-2018.12-Linux-x86_64.sh
+
+bash Miniconda3-latest-Linux-x86_64.sh NOT THIS ONE bash the file they indicate downloaded
+bash Anaconda3-2018.12-Linux-x86_64.sh
+
+attach conda to PATH:
+export PATH=~/anaconda3/bin:$PATH
+
+had to close and reopen terminal after this. OR do this:
+source ~/.bashrc
+
+install pytorch as local, using conda (pip3 wasn't working, didn't have the wheel):
+
+conda install pytorch torchvision cudatoolkit=10.0 -c pytorch
+
+download obstacle tower repo, cd in and install:
+python3 setup.py install (usually would pip3 install ./ but pip and conda aren't communicating well, and pytorch has to be on conda)
+
+done!
+
+NOTE: when setting up another GCP for juno for the free credits (4.7), ran into problem bc not actually miniconda. we must have been using a background anaconda in the above steps. 
+
+
+
+3.2
+
+installing on gcp. using https://github.com/Unity-Technologies/obstacle-tower-env/blob/master/examples/gcp_training.md
+
+had to find own BusID. had to repeatedly pip3 uninstall numpy
+
+sudo /usr/bin/X :2 &
+export DISPLAY=:2
+
+
+
+
+
+2.2 downloaded game, played to level 15. 
+
+
