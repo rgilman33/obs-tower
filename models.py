@@ -35,8 +35,8 @@ CONTROLLER_MODEL_PATH = "controller.torch"
 SZ=128
 nz = 300
 h_dim = 16384 #8192#16384 #32768; # this results from img sz and model architecture
-ENCODER_MODEL_PATH = 'encoder.torch'
-GEN_MODEL_PATH = 'gen.torch'
+ENCODER_MODEL_PATH = 'encoder_v2.torch'
+GEN_MODEL_PATH = 'gen_v2.torch'
 
 Z_SEQS_PATH = "z_seq_sequential.pt"
 
@@ -327,7 +327,7 @@ def normalize_sequential(raw_data, calc=True, mean=None, absmax=None):
     """
     if type(raw_data) != torch.Tensor: raw_data=torch.tensor(raw_data).to(device)
     z_mean = raw_data.mean(dim=0).unsqueeze(0) if calc else mean
-    centered = raw_data - z_mean
+    centered = raw_data - z_meandf
     m, _ = centered.max(dim=0); mm, _ = centered.min(dim=0); 
     m_abs = torch.max(torch.abs(m),torch.abs(mm)).unsqueeze(0) if calc else absmax;
     normed_data = centered / m_abs

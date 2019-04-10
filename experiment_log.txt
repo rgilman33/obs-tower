@@ -3,6 +3,32 @@ git lfs track "*.torch"
 git lfs migrate blah blah
 
 
+
+4.10
+trained overnight, pics don't look any better, maybe bit worse w the higher vae loss. also, it's not capturing orbs still. reverting back to path models from before, reverting arch to vae, feature, returns loss 1/10 1 1/10. bringing offline to figure out how to calculate make better use of info to help see orbs. 
+
+
+
+
+
+4.9
+trained overnight. recon imgs still look good but slightly worse than before, which is fine bc true recon is not what we're after--we want relevent recon, returns preds look pretty accurate. increasing R ratio, not dividing at all (before was by 10). now R loss about 1/10 feature loss, on par w AE loss. current model saved to MODEL_PATHs, testing these on highR. Trained all day, look good, return preds pretty decent. saved to model path. Problem is, still can't see orbs or keys!! wth?? how to make see these small objects?
+
+let's make returns even more important. x10 to bring to same magnitude as feature loss. testing on highR. also increasing vae loss. now, all three losses are of the same magnitude. vae loss bringing in, hope is that it will capture small things better, even if result is more blurry. 
+
+
+
+
+4.8
+Got imgs to new Juno GCP vm. attempting to start VAE training. VAE training successfully. Recon imgs already look very good. saving to _v2 models, though of course loaded w previous trained models (which will remain untouched as backup). 
+
+vae training nicely, recons already look excellent. turning up reward loss to force to 'see' keys and orbs. must imbue latents w this info. now div only by 100, so loss is about 1/100 of feature loss, 1/10 vae loss
+
+NOTE: this GPU is fast i think, if pricing is correct that's pretty excellent. comment online suggest pricing is wrong, actually about double price of k80. we can switch to k80 after training vae, no worries. 
+
+now only dividing reward loss by 10. training overnight. 
+
+
 4.7
 note: gathering orbs is very important. start at 2k, after ten levels of gathering orbs we're at 20k! this will be important going forward. 
 
