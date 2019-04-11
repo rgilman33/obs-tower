@@ -4,9 +4,25 @@ git lfs migrate blah blah
 
 
 
+4.11
+
+adding img weights based on keys and orbs. tested many, looks very accurate in terms of capturing which frames have which objects. weighting keys by 20, orbs by 4. 
+
+
+
+
+
+
+
 4.10
 trained overnight, pics don't look any better, maybe bit worse w the higher vae loss. also, it's not capturing orbs still. reverting back to path models from before, reverting arch to vae, feature, returns loss 1/10 1 1/10. bringing offline to figure out how to calculate make better use of info to help see orbs. 
 
+
+offline now. goal is to better see orbs and keys, ensure that data is embedded in latent zs. plan: use metadata to calculate 'key returns' and 'time returns'. the high values of these most likely high keys and orbs in their frames, respectively. when training vae w current 1-10-1 vae-feature-R loss setup, place higher weight on those frames. Hypothesis is that this will force vae to accomodate these small but important elements in the same way oversampling the frames should. 
+
+earlier hypothesis that adding R preds to vae would make 'see' keys and orbs yet untested, as i don't believe these elements have high enough R to figure strongly. would have to increase their relative R to really test that hypo. 
+
+TODO implement above.
 
 
 
