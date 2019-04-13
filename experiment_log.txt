@@ -3,10 +3,21 @@ git lfs track "*.torch"
 git lfs migrate blah blah
 
 
+4.13
+agent STILL can't see orbs very well.
+
+4.12
+further testing out img_weights. walked through dataloader in order. it looks like they are matching up correctly, only problem is we're also assignging high weights to inner doors. remomving that now. FALSE, inner doors not adding time reward. In investigation, noticed that 15 is too long, half that is more reasonable for frames w target, so reducing to 7. increasing weights to key 25 and orb 15. Keys had begun to show up in the few frames I saw, hopefully higher weights will force orbs to show up too. 
+
+training for awhile, hopefully this does the trick. 
+
 
 4.11
 
 adding img weights based on keys and orbs. tested many, looks very accurate in terms of capturing which frames have which objects. weighting keys by 20, orbs by 4. 
+
+Had to rewrite feature loss to be able to weight by img (was previously just taking mean of entire batch).
+training. loading w MODEL_PATH (currently v2) models, saving to pioneer. deleted highR. model is using 1-10-1 loss as below. We should know if successful in not too long--test is can we 'see' orbs and keys in recon imgs? if so, continue to lstm. 
 
 
 

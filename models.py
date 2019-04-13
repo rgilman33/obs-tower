@@ -193,7 +193,7 @@ class Generator(nn.Module):
         
         z_seq = z_seq.unsqueeze(-1).unsqueeze(-1)
         z_seq = self.drop_z(z_seq)
-        out = F.sigmoid(self.features(z_seq)) # changed this to Sigmoid to force to 0 to 1
+        out = torch.sigmoid(self.features(z_seq)) # changed this to Sigmoid to force to 0 to 1
         return out, reward
 
     
