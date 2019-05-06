@@ -3,6 +3,77 @@ git lfs track "*.torch"
 git lfs migrate blah blah
 
 
+5.4 trained overnight. same. one-step model saved to PATH, 2-step saved to pioneer. going to C now. train a model decently, ideally to level 10, then generate a bunch more data. at that point, explore adv domain adaptation, see if we can purify these zs a bit. 
+
+realized was feeding aux info into lstm that it WOULDN"T HAVE AT TEST TIME, ie returns and incoming orb/key. still training to predict those, but now not feeding them as input (zeroed them out instead of retraining lstm). in C, these will be zeroed out as well. we want lstm to predict these, but it won't have access to them. retraining PATH one-step lstm for a bit, pioneer is out of luck for now. we can come back to mult-step later. WAIT this doesn't allow lstm to pred meta. we need to zero it out right before feeding into lstm, not where we are now. 
+
+TODO: fix lstm training mechanism to predict returns, orbs, keys but not use them as input. ie zero these out right as feeding into lstm during each batch., not beforehand.
+
+after a few minutes of imitation training, C already gets up to 3 levels?? entropy pretty high, at one-tenth action loss. constently getting 3 levels within a few minuts of trianing... started w all human, now training on 50/50 split. 
+
+training for awhile. 
+
+TODO: Controller loop needs refactoring and thorough check / verification. 
+
+entropy loss at about 1/100 of action loss. had gotten too high, on par w action loss, and flattened actions too much. already a few get to level five, that's only a few hours training, took days for that before i believe. turning guidance down to 20% (was at 30%). lr is at 3-4. 
+
+5.3
+
+trained overnight, vidgen the same. training another version w skipframe. saving this version to PATH. training skipframe on pioneer.
+
+was looking back on WM drone, was i steppifying zs but not auxiliary? also reminded of how SMOOTH those vae outputs were. damn. should we be smoothing the vae output? would be easier to pred, but also maybe the noise is helpful?
+
+
+5.2
+
+trained overnight, vidgen better, not perfect. we still have too little data for perfect, i believe, judging from previous drone results. there are sections of strong coherence. obs-tower (8). loss dropping linearly, is that overfitting? vidgen agent walks through doors repeatedly. 
+
+I like the idea of our multiple timestep preds. should we add more at different timesteps? saving this lstm at PATH, adding in another time pred at 50, saving at pioneer.
+
+set up testing apparatus to view lstm preds at different time horizons. wow way strange! next zs decode to very reasonable, z10s decode to looks like when ppl viz cnn filters, all strange and composite, definnitely composed of correct elements but lots of strangeness. more gold and blue than normal... taking away all exept for 10z loss, no consistency loss anything. i just want to see if lstm can vanilla pred at multiple timescales. 
+
+trained a few more hours, vidgen looks better but 10step pred is still disco madness. why? we're simply predding at two horizons? why would one be so normal and the other so disco? starting from scratch. saved current model to PATH, training scratch on pioneer. 
+
+BUG in lstm. was using sigma where should have been using sigma2. why did it turn all disco? wish i had that intuition. fixed, loaded up with prev model, now training on PATH. loss dropping significantly faster now on step10. 
+
+5.1.19
+
+trained overnight, maybe didn't even need to. Model see orbs and keys very clearly! importance mask solved it, oversampling probably helped a lot, especially w keys. keeping key and orb preds in bc i like them theoretically, though haven't tested empirical effect.
+testing straight vid reconstruction. saved both gen and encoder to MODEL_PATH, which is v2. 
+
+compared new vid (obs-tower(1)) to prev (obs-tower): overall not as clear, but is that bc prev was overfit or bc underlying quality? also, when orbs present, they show up in multiple places like some magician from a video game!! training vae more, applying mast to recons as well.
+
+tested vid again (3), much better! no repeating magician orbs. really interesting how it was doing that. a combo of the pixel loss w feature loss. 
+
+moving on to lstm!! saving model to PATH. same vae exists at pioneer and PATH
+
+trained lstm a few hours, testing genseq, kindof all over the place, similar to drone work before. i like idea of adding another head on to pred at longer distance. 
+
+added, very simple, testing now. should also add consistency loss, force long to == short at that distance. 
+
+Holy shit MASSIVE bug in lstm--was only doing one batch in each epoch!! was i doing that before?? did our previous lstm we just submitted use this broken ass version?? damn. if that's the case, interesting implications for lstm's importance... fixed now, removing long head from above, want to see how it does just vanilla. wow. interested to see how it trains for real now. 
+
+tested after an hour, vidgen still not good though loss is dropping much better. loss hasn't flattened out, training more. 
+a few more hours, vidgen looks better still not good though. adding above losses back in. i like the idea of them conceptually. 
+
+4.30
+
+model definitely picking up most keys after training on key-heavy dataset. orbs still not so much! in an effort to fix that, putting an 'importance mask' on pixel loss. multiplying that by pixelwise bce to bring out the blues. tried doing mse by hand and that blew up model, lost yesterday's progress. starting fresh w model that doesn't pred orb or key, and hasn't trained on balanced dataset. training for awhile w this weighted bce, want to see if this in and of itself fixes orb issue. after that, bringing back in key and orb prediction loss. IT WORKED INSTANTLY!!!! BRIGHT FUCKING BLUE ORBS!! adding gold as well, for keys
+
+training on all losses. ratio: feature loss 1, orb key returns pixel loss .1, kld .01
+
+4.29
+
+After training vae for awhile, tested straight reconstruction vid--still can't see orbs and keys!! gini's movement around is good and clear, i could play from it, but lack of keys and orbs makes it very difficult to go for those. 
+
+using img weights to oversample rather than weight loss. hope this makes the difference. still using key orb returns loss as auxiliary losses. 
+
+
+4.28
+Back at it after bit of break. Current model should get us into top 50. 
+
+adding heads to everything. for VAE, already 
+
 4.13
 agent STILL can't see orbs very well.
 
@@ -56,6 +127,7 @@ NOTE: this GPU is fast i think, if pricing is correct that's pretty excellent. c
 now only dividing reward loss by 10. training overnight. 
 
 
+MOVING TO WORK ON DATA COLLECTION AND VAE-LSTM
 4.7
 note: gathering orbs is very important. start at 2k, after ten levels of gathering orbs we're at 20k! this will be important going forward. 
 

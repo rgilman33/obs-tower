@@ -27,6 +27,8 @@ import cv2
 from obstacle_tower_env import ObstacleTowerEnv
 
 
+def r(n): return np.round(n, 4)
+
 device = "cuda" if torch.cuda.is_available() else "cpu"; print("device", device)
 
 CONTROLLER_MODEL_PATH = "controller.torch"
@@ -41,22 +43,73 @@ GEN_MODEL_PATH = 'gen_v2.torch'
 Z_SEQS_PATH = "z_seq_sequential.pt"
 
 # LSTM
-N_IN = nz 
 N_HIDDEN = 1024; 
 N_LAYERS = 2; 
 N_GAUSSIANS = 5
 DROP = .1
 LSTM_MODEL_PATH = 'lstm.torch'
 
+N_AUX = 11 # number of auxiliary data to feed into lstm
 
 
-N_ACTIONS = 11; # just panning
+# Not using this anywhere, but like the algo so keeping it around. 
+def weighted_sum(n1, n2, w1, w2):
+    "adds two numbers w weights"
+    x = w1*n2 / (n1 - w1*n1)
+    return (x*n1+n2) / 2
+
+
+class ImageFolderWithPaths(datasets.ImageFolder):
+    """Custom dataset that includes image file paths. Extends
+    torchvision.datasets.ImageFolder
+    """
+
+    # override the __getitem__ method. this is the method dataloader calls
+    def __getitem__(self, index):
+        # this is what ImageFolder normally returns 
+        original_tuple = super(ImageFolderWithPaths, self).__getitem__(index)
+        # the image file path
+        path = self.imgs[index][0]
+        # make a new tuple that includes original and the path
+        tuple_with_path = (original_tuple + (path,))
+        return tuple_with_path
+    
+######################################
+# Retrieving meta
+META_PATH = "meta.pkl"
+action_cols = ['NO_FRONTAL', 'FORWARD', 
+               'NO_CAMERA', 'CAMERA_LEFT','CAMERA_RIGHT', 
+               'NO_JUMP', 'JUMP']
+
+# key to indicate when key incoming, KEYS to indicate has key in pouch (ie can open locked door)
+# meta_payload_cols =['returns', 'key', 'KEYS', 'orb'] + action_cols # CAN"T USE THESE IN CONTROLLER
+meta_payload_cols =['returns', 'key', 'KEYS', 'orb'] + action_cols
+    
+def path_to_actions(paths, meta): return torch.FloatTensor(meta.loc[list(paths), action_cols].values)
+def path_to_rewards(paths, meta): return torch.FloatTensor(meta.loc[list(paths)].returns.values).to(device);
+def path_to_weights(paths, meta): return torch.FloatTensor(meta.loc[list(paths)].img_weight).to(device);
+def path_to_orbs(paths, meta): return torch.FloatTensor(meta.loc[list(paths)].orb).to(device);
+def path_to_keys(paths, meta): return torch.FloatTensor(meta.loc[list(paths)].key).to(device);
+
+def compile_lstm_in(meta, z_seq):
+    """
+    Simply cats selection of meta and normalized z_seqs for input into lstm. when just using z seqs, this was unnecessary.
+    """
+    meta = meta[meta_payload_cols]
+    meta['returns']=0.0; meta['key']=0.0; meta['orb']=0.0 
+    # zeroing these out as C doesn't have this info to pass in, but still want to predict it
+    
+    meta = torch.FloatTensor(meta.values).to(device); 
+    lstm_in = torch.cat([meta, z_seq], dim=1);
+    return lstm_in
+
+N_ACTIONS = 7;
 
 s = nn.Softmax()
 class Controller(nn.Module):
     def __init__(self):
         super().__init__()
-        self.linear = nn.Linear(nz+N_HIDDEN, N_ACTIONS)
+        self.linear = nn.Linear(nz + N_HIDDEN, N_ACTIONS)
         self.act = nn.Sigmoid()
         #self.act = nn.LeakyReLU(0.2, inplace=True)
         #self.s = nn.LogSoftmax()
@@ -73,26 +126,24 @@ class Controller(nn.Module):
     
 
 def action_probs_to_action(probs):
-    forward = probs[:, 0:3]; camera=probs[:, 3:6]; jump=probs[:,6:8]; side=probs[:, 8:11]
-    action = [torch.distributions.Categorical(p).sample().detach().item() for p in [forward,camera,jump,side]]
+    """ Takes output of controller and converts to action in format [0,0,0,0] """
+    forward = probs[:, 0:2]; camera=probs[:, 2:5]; jump=probs[:,5:7]; 
+    action = [torch.distributions.Categorical(p).sample().detach().item() for p in [forward,camera,jump]]
+    action.append(0) # not allowing any motion along side dimension
     return action
 
-def action_to_dummies(action):
+def action_to_dummies(action): 
+    # updated for 7 actions. ignores last action (side)
+    # THESE MUST RETURN IN SAME ORDER AS ACTION_COLS
     return [
     1. if action[0]==0 else 0., # no frontal
     1. if action[0]==1 else 0., # forward
-    1. if action[0]==2 else 0., # backward
     1. if action[1]==0 else 0., # camera none
     1. if action[1]==1 else 0., # camera left
     1. if action[1]==2 else 0., # camera right
     1. if action[2]==0 else 0., # no jump
     1. if action[2]==1 else 0., # jump
-    1. if action[3]==0 else 0., # no side
-    1. if action[3]==1 else 0., # side right
-    1. if action[3]==2 else 0., # side left
     ]
-
-    
     
     
 # These come from zseqs straight from vae, we train lstm using these values to normalize.
@@ -187,14 +238,18 @@ class Generator(nn.Module):
         self.features = nn.Sequential(*layers)
         
         self.reward_head = nn.Linear(nz, 1)
+        self.orb_head = nn.Linear(nz, 1)
+        self.key_head = nn.Linear(nz, 1)
 
     def forward(self, z_seq): 
         reward = self.reward_head(z_seq).squeeze(1)
+        orb = torch.sigmoid(self.orb_head(z_seq).squeeze(1))
+        key = torch.sigmoid(self.key_head(z_seq).squeeze(1))
         
         z_seq = z_seq.unsqueeze(-1).unsqueeze(-1)
         z_seq = self.drop_z(z_seq)
         out = torch.sigmoid(self.features(z_seq)) # changed this to Sigmoid to force to 0 to 1
-        return out, reward
+        return out, reward, orb, key
 
     
     
@@ -283,11 +338,22 @@ class AWD_LSTM(nn.Module):
         self.input_dp = RNNDropout(input_p)
         self.hidden_dps = nn.ModuleList([RNNDropout(hidden_p) for l in range(n_layers)])
         
-        self.z_pi = nn.Linear(n_hid, N_GAUSSIANS*N_IN)
-        self.z_sigma = nn.Linear(n_hid, N_GAUSSIANS*N_IN)
-        self.z_mu = nn.Linear(n_hid, N_GAUSSIANS*N_IN)
+        # Pred short term
+        self.z_pi = nn.Linear(n_hid, N_GAUSSIANS*emb_sz)
+        self.z_sigma = nn.Linear(n_hid, N_GAUSSIANS*emb_sz)
+        self.z_mu = nn.Linear(n_hid, N_GAUSSIANS*emb_sz)
         
-        self.N_HIDDEN = N_HIDDEN; self.N_IN=N_IN
+        # Pred long term
+        self.z_pi_long = nn.Linear(n_hid, N_GAUSSIANS*emb_sz)
+        self.z_sigma_long = nn.Linear(n_hid, N_GAUSSIANS*emb_sz)
+        self.z_mu_long = nn.Linear(n_hid, N_GAUSSIANS*emb_sz)
+        
+        # Pred long term 2
+        self.z_pi_long2 = nn.Linear(n_hid, N_GAUSSIANS*emb_sz)
+        self.z_sigma_long2 = nn.Linear(n_hid, N_GAUSSIANS*emb_sz)
+        self.z_mu_long2 = nn.Linear(n_hid, N_GAUSSIANS*emb_sz)
+        
+        self.N_HIDDEN = N_HIDDEN; self.N_IN=emb_sz
         
     def forward(self, input, hiddens):
         raw_output = self.input_dp(input)
@@ -298,6 +364,9 @@ class AWD_LSTM(nn.Module):
             if l != self.n_layers - 1: raw_output = hid_dp(raw_output)
             outputs.append(raw_output)
         hidden = new_hidden
+        
+        ##############
+        # Short term
         pi = self.z_pi(raw_output) 
         # Do i even need softmax here? Moved this into loss function itself
         #pi = F.softmax(pi, dim=2) #ONNX can't handle dim 2
@@ -306,10 +375,24 @@ class AWD_LSTM(nn.Module):
         sigma = self.z_sigma(raw_output)
         sigma = torch.exp(sigma)
         #sigma = sigma * (TEMPERATURE ** 0.5)
-        
         mu = self.z_mu(raw_output)
         
-        return [pi, mu, sigma], hidden, raw_output
+        ##############
+        # Long term
+        pi_long = self.z_pi_long(raw_output)
+        sigma_long = self.z_sigma_long(raw_output)
+        sigma_long = torch.exp(sigma_long)
+        mu_long = self.z_mu_long(raw_output)
+        
+        
+        ##############
+        # Long term 2
+        pi_long2 = self.z_pi_long2(raw_output)
+        sigma_long2 = self.z_sigma_long2(raw_output)
+        sigma_long2 = torch.exp(sigma_long2)
+        mu_long2 = self.z_mu_long2(raw_output)
+        
+        return [pi, mu, sigma], [pi_long, mu_long, sigma_long], [pi_long2, mu_long2, sigma_long2], hidden, raw_output
     
     
 def make_hidden(bsz):
@@ -327,7 +410,7 @@ def normalize_sequential(raw_data, calc=True, mean=None, absmax=None):
     """
     if type(raw_data) != torch.Tensor: raw_data=torch.tensor(raw_data).to(device)
     z_mean = raw_data.mean(dim=0).unsqueeze(0) if calc else mean
-    centered = raw_data - z_meandf
+    centered = raw_data - z_mean
     m, _ = centered.max(dim=0); mm, _ = centered.min(dim=0); 
     m_abs = torch.max(torch.abs(m),torch.abs(mm)).unsqueeze(0) if calc else absmax;
     normed_data = centered / m_abs
@@ -383,13 +466,14 @@ def compute_returns(rewards, dones, times):
     r2=0
     R.append(r2)
     for i in range(1, len(rewards)):
-        if dones[i] or (rewards[i+1]==1.0): r1=0. # Reset to zero when done, also when go to new floor
+        if dones[i]: r1=0. # Reset to zero when done,
+        if i < (len(rewards)-1) and rewards[i+1]==1.0: r1=0.#also when go to new floor
         else: 
             r = .5 if rewards[i]==1.0 else rewards[i] # Reducing importance of floor completion.
             r1 = r + time_reward[i] + r2 * GAMMA
         R.append(np.round(r1, 4))
         r2=r1
-    rewards.reverse(); R.reverse(); time_reward=np.flip(time_reward)
+    rewards.reverse(); R.reverse(); time_reward=np.flip(time_reward);
     return pd.DataFrame({"state_reward":rewards, 
                          "time_reward": time_reward, 
                          "returns":R})
