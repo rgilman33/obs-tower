@@ -3,6 +3,100 @@ git lfs track "*.torch"
 git lfs migrate blah blah
 
 
+5.17
+TODO: add in logprob, normal policy gradient updates. change controller output to no activation, logsoftmax probably. in this way, can train w all data regardless of pos/neg. hopefully will make it harder to converge on as high probs as we're getting now. 
+
+
+5.16, still around 3, still same issues. turning lr down to 1-4, soon, gather more data and go back to vae lstm.
+- doesnt see, go for keys.
+- goes BACKWARDS all the time, no sense of where she's been, where she's going
+- still interested in Entry doors
+
+TODO maybe
+do we want to reset hidden state of lstm after each floor? as i understand, there is no carry over of anything btwn levels. could help stabilize?
+
+changing imitation goals to be .99 and .01 instead of 1,0. agent should never be so confident about actions. 
+
+removing all neg returns. had turned them up, agent deteriorated badly. perhaps would have regained, but I'm not confident that would happen. keeping .99 -> .1 bound
+
+we should be working with LOGPROBS, also, might as well use normal update process. should keep as many things 'normal' as possible, fewer moving pieces. 
+
+TODO: implement logprobs, standard policy gradient update, ie logprob * returns. 
+Get more data. train vae lstm again.
+
+
+
+5.15
+same, around 3, bit less :( increased proportion of neg loss today to same as pos. watched vid (20), man she moves around env well, just aimless. doesn't really go for orbs or keys. should we gather more data, like 1M frames, and retrain VAE and LSTM? really finetune lstm this time. give more accurate distribution to vae and lstm. they never see entry doors again, for example, bc i never go back through them. but gini spends lots of time in there jumping around. 
+
+simplifying rewards. get +.5 for any positive return (final door, inner door, key), +.25 for time rewards, ie orbs. -.0005 for every step, which accumulates to returns of -.01 if agent hasn't gotten anything for awhile. prev model saved at safe_controller. goal here is to get gini focused on inner doors, keys and orbs. she already seems to go for final doors just fine. we turned gamma down to .95 seeing as rewards less sparse now. 
+
+
+5.14
+still around 3. agent moves around env fluently, but has very short term memory, goes back into entry doors all the time, overall does not have a sense of urgency or purpose. we must introduce negative reinforcement. just unsure how. 
+
+adding neg returns in, imitation loss on inverse of actual actions, ie [1,0] becomes [0,1]. computing this loss separately and adding to total loss at approximately 1/10 of pos action loss. also increasing gamma to .97, give more runway for rewards, try to instill a little long term thinking. breakdown: "gathered dataset of size torch.Size([970, 1324]) pos torch.Size([511, 1324])"
+
+
+
+5.13
+scores improving w big C. turned lr down to 1-4, no back to 3-4 increase mem to 200k, entropy at 1/10 bc i turned it up earlier bc probs getting way too confident. scores at 3-ish, that's with random floor 0-4. turned off negative rewards bc probs sum was skewing high. 
+
+vid rl-run(18), appears to go for orbs kindof, reluctant to jump, or stop. lots of going back through doors. clearly very versatile in the env, but doesn't seem super driven to move forward. isn't going for keys at all, though should be able to see them. should set up apparatus to see what she sees, make sure keys etc are showing up. need to continue to even probs out. 
+
+
+5.12
+checked scores this morning, worse than i'd hoped, but then remembered had begun randomizing floors. can really see the point where we instituted that. in the game scores chart, however, can clearly distinguish progress after that point. I almost threw away this model! just let it train for longer. watched a vid of this model, not very informative! lots of jumping in entry doors, after going back into them. probs had gotten too confident in some places, turning up entropy to 1/10 for awhile to even out a bit. 
+
+
+
+
+
+5.11
+C just not improving fast enough! scores at around 3 ish. currently saved at CONTROLLER_PATH. trying a bigger C: 1024 512 7. trained for a bit on existing data, human and agent, at lr1-4. lr back to 3-4 and training on loop. increasing mem length to 100k, realized that doesn't matter how off policy our agent is, can gather tons of memory, no worries at all. decrease minipochs to 1 to give each obs same amount of exposure. we should consider using the lower lr permanently. 
+
+
+
+5.10
+trained overnight. not better, if anything slightly worse. scores to 2.1 ish. watched vid, very similar. lots of 'exploring', often misses doors, goes back through doors it came from, doesn't get orbs. reduced gamma back to .95 and training more. 
+
+adding back in negative returns. in fact using all returns. before, dataset was of size 3k ish, now of size 10k (n steps). increasing mem sz to 50k from 40k and running two epochs per iteration. increasing agent bs to 240, human still at 5. all this is to attempt to keep other stimuli relatively constant (much more agent data, but of lower importance, -.01 compared to max of .6. each observation still seen 10 times (50k mem, 10k update each iter, two epochs per iter). bc of how we're computing loss (psuedo imitation loss on self), have to be careful about magnitudes of probs. forward and jump are ok bc two values each, pan has three so we'll be forcing TWO actions upwards while forcing a single action downwards (both unbounded). probs may drift upwards. tracking avg sum of each row. should remain at 3 (where it is currently, bc three actions). 
+
+goal w negative rewards of course is to reduce stupid behavior and give a sense of urgency. want agent to move fast. allow this to train for a while. don't tinker, just observe. 
+
+can introduce concept of critic very easily using returns head of vae. 
+
+trained couple hours, probs starting to flatten a bit more than i like. dividing by 100 instead of 10 now. after a few hours of this, scores visibly improving, though not perfect. currently at 3 ish. 
+
+
+
+5.9
+been training for awhile, scores to 2.5 or so, had 10 human for 120 agent. reducing human to 5, continuing training. lr still at 3-4. entropy loss at approximately 1/10 magnitude of action loss, our distributions look quite good, keep an eye on them though bc don't want to overly flatten probs. 
+
+if this model doesn't keep improving, try 1) frameskip and 2) larger C (inspired by outstanding article on 'lottery ticket' hypothesis). 3) ensure order is correct in terms of SARSA
+
+just watched a vid, very interesting! A totally different agent than we submitted in round 1. often pauses to look around. lots of jumping on things and roaming around. no jitter. unfortunately doesn't go for orbs :( don't know why. also shows same return behavior, attracted to doors it came through, especially start doors (downwards arrow). could the lack of going for orbs be bc had human imitation too high? very intriguing to watch this agent play. how can we introduce incentive to go quickly, not go backwards?
+
+the jumping, pausing, considering, etc, would of course make initial progress slower, but our hope was that it would be of benefit later on. Especially the getting of orbs, could drastically extend agents ability to explore. this agent feels like has more potential, but maybe i just like it bc it plays like me :)
+
+a key to this is proper lstm training. we're still not there. must ensure sarsa lined up, must ensure running at correct cadence. ideally could get to level 10 before moving back to lstm (so can generate lots more data), but if can't, that will be a place to work on. 
+
+watched another vid. agent gets stuck in enter doors and wastes a TON of time. jumping at the wall (at least that's not a bad instinct). very destructive behavior. all those low scoring games, agent is probably just jumping around in doorways. 
+
+increasing gamma to .99, from .95. was gathering datasets of approx. 3k before, after gamma increase: 6.5k. increasing memory back to 40k in response. this low gamma could also have contributed to slower training. Change nothing else, and allow this to train overnight. 
+
+
+
+
+5.7 
+model was just getting worse! down to score 1. init random model and train imitation for 2 min, that's already better than other one!
+
+5.6
+reconnecting after lost internet. lr to 6-4, random start anywhere btwn level 0-4. 
+
+5.5
+trained overnight. scores 2.2 to 2.6. increasing minipochs to 2. so each obs gets seen about 15 times. LOST INTERNET
+
 5.4 trained overnight. same. one-step model saved to PATH, 2-step saved to pioneer. going to C now. train a model decently, ideally to level 10, then generate a bunch more data. at that point, explore adv domain adaptation, see if we can purify these zs a bit. 
 
 realized was feeding aux info into lstm that it WOULDN"T HAVE AT TEST TIME, ie returns and incoming orb/key. still training to predict those, but now not feeding them as input (zeroed them out instead of retraining lstm). in C, these will be zeroed out as well. we want lstm to predict these, but it won't have access to them. retraining PATH one-step lstm for a bit, pioneer is out of luck for now. we can come back to mult-step later. WAIT this doesn't allow lstm to pred meta. we need to zero it out right before feeding into lstm, not where we are now. 
