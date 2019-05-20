@@ -3,8 +3,22 @@ git lfs track "*.torch"
 git lfs migrate blah blah
 
 
+5.19
+currently at slightly above 3, or higher, oscillates though. probs very skewed. watched vid (27) agent did well, both episodes ended bc agent didn't go for key, despite key being in easy to see and find location. we should increase returns on key. also the same going backwards nonsense. 
+
+increasing key reward to 2.0. other rewards are still .5 for all pos, .25 for orb. 
+
+
+5.18
+trained overnight, scores still around 1.2. vid, jumping all over the place! hypothesis: neg returns forcing jumping, bc agent normally doesn't do that, so doing the opposite means jumping. reloading safe agent and trying again, this time only using pan actions for negative reinforcement, essentially telling the agent that negative actions are only a result of bad panning actions, which has been the case so far. first, refilling the memory w good images (will save this to safe version like model). 
+
+
 5.17
-TODO: add in logprob, normal policy gradient updates. change controller output to no activation, logsoftmax probably. in this way, can train w all data regardless of pos/neg. hopefully will make it harder to converge on as high probs as we're getting now. 
+TODO: add in logprob, normal policy gradient updates. change controller output to no activation, logsoftmax probably. in this way, can train w all data regardless of pos/neg. hopefully will make it harder to converge on as high probs as we're getting now.
+
+implemented that. agent deteriorates badly. tried on fresh model, should be able to imitation learn quickly but no. nothing. reverting back to old model, testing that again make sure we're in a good spot, then experiment further. 
+
+once ascertain current training is steady, add back in negative returns. 
 
 
 5.16, still around 3, still same issues. turning lr down to 1-4, soon, gather more data and go back to vae lstm.
@@ -17,7 +31,7 @@ do we want to reset hidden state of lstm after each floor? as i understand, ther
 
 changing imitation goals to be .99 and .01 instead of 1,0. agent should never be so confident about actions. 
 
-removing all neg returns. had turned them up, agent deteriorated badly. perhaps would have regained, but I'm not confident that would happen. keeping .99 -> .1 bound
+removing all neg returns. had turned them up, agent deteriorated badly. perhaps would have regained, but I'm not confident that would happen. keeping .99 -> .1 bound. after removing negs, agent STILL deteriorates, i believe it's bc the .99 .1 bound
 
 we should be working with LOGPROBS, also, might as well use normal update process. should keep as many things 'normal' as possible, fewer moving pieces. 
 

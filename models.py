@@ -136,8 +136,26 @@ class BigController(nn.Module):
     def forward(self, x):
         x = nn.ReLU()(self.drop(self.linear1(x)))
         x = nn.ReLU()(self.drop(self.linear2(x)))
-        x = nn.Sigmoid()(self.drop(self.linear3(x))) # change this to no activation, add in dropout
+        x = nn.Sigmoid()(self.linear3(x)) # change this to no activation, add in dropout
         return x 
+    
+"""
+logsoftmax = nn.LogSoftmax()
+class BigController(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear1 = nn.Linear(nz + N_HIDDEN, 1028)
+        self.linear2 = nn.Linear(1028, 512)
+        self.linear3 = nn.Linear(512, N_ACTIONS)
+        self.drop = nn.Dropout(.25)
+    
+    def forward(self, x):
+        x = nn.ReLU()(self.drop(self.linear1(x)))
+        x = nn.ReLU()(self.drop(self.linear2(x)))
+        x = self.drop(self.linear3(x))
+        front = logsoftmax(x[:, :2]); pan = logsoftmax(x[:, 2:5]); jump=logsoftmax(x[:, 5:7]);
+        x = torch.cat([front,pan,jump],dim=1)
+        return x """
     
 
 def action_probs_to_action(probs):
@@ -462,7 +480,7 @@ def generate_flipped_sine(L,N):
     return seq
 
 
-def compute_returns(rewards, dones, times):
+def compute_returns(rewards, dones, times, got_key):
     # Add time rewards to reward
     rewards = np.copy(rewards); dones=np.copy(dones); times=np.copy(times)
     
@@ -474,10 +492,10 @@ def compute_returns(rewards, dones, times):
     #rewards += time_reward
 
     # Compute discounted returns
-    GAMMA = .95
+    GAMMA = .98
     R = []
-    rewards=list(rewards); dones=list(dones)
-    rewards.reverse(); dones.reverse(); time_reward=np.flip(time_reward)
+    rewards=list(rewards); dones=list(dones); got_key=list(got_key)
+    rewards.reverse(); dones.reverse(); time_reward=np.flip(time_reward); got_key.reverse()
     r2=0
     R.append(r2)
     for i in range(1, len(rewards)):
@@ -485,7 +503,7 @@ def compute_returns(rewards, dones, times):
         if i < (len(rewards)-1) and rewards[i+1]==1.0: r1=0.#reset to zero when go to new floor
         else: 
             #r = .5 if rewards[i]==1.0 else rewards[i] # Reducing importance of floor completion.
-            r = .5 if rewards[i] > 0. else (.25 if time_reward[i] > 0. else -0.0005)
+            r = 2.0 if got_key[i] else (.5 if rewards[i] > 0. else (.25 if time_reward[i] > 0. else -0.0005))
             #r1 = r + time_reward[i] + r2 * GAMMA
             r1 = r + r2 * GAMMA
         R.append(np.round(r1, 4))
