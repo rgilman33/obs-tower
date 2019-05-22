@@ -74,6 +74,103 @@ class ImageFolderWithPaths(datasets.ImageFolder):
         tuple_with_path = (original_tuple + (path,))
         return tuple_with_path
     
+def format_ix(ix): # Takes in int and returns str padded w 0s. Want to keep files in order. Good up to 999k.
+    return ('00000'+str(ix))[-6:]
+
+def np_img_to_cv2_img(frame):
+    frame = cv2.resize(frame, (128, 128), cv2.INTER_AREA)
+    frame = np.uint8(frame*255)
+    frame = np.flip(frame, axis=2)
+    return frame
+
+def action_array_to_dummies(action):
+    return {
+    'FORWARD':1. if action[0]==1 else 0.,
+    'BACKWARD':1. if action[0]==2 else 0.,
+    'CAMERA_LEFT':1. if action[1]==1 else 0.,
+    'CAMERA_RIGHT':1. if action[1]==2 else 0.,
+    'JUMP': 1. if action[2]==1 else 0.,
+    'RIGHT':1. if action[3]== 1 else 0.,
+    'LEFT':1. if action[3]==2 else 0.,
+    }
+
+def np_img_to_pytorch_img(frame):
+    """ Takes in np frame from gym, outputs img ready for pytorch """
+    frame = cv2.resize(frame, (128, 128), cv2.INTER_AREA)
+    frame = np.transpose(frame, (2,0,1)) # numpy has channels last, we want channels first
+    frame = torch.FloatTensor(frame).to(device).unsqueeze(0); #print(frame.shape)
+    return frame
+
+def compile_got_key(keys):
+    """ takes in an array of 'has keys' and returns array w flag only for the frame in which key is got """
+    k = np.array(keys[1:])- np.array(keys[:-1]);
+    got_key = [0]+list(k); 
+    got_key = [x if x >= 0 else 0 for x in got_key] # at end of level, 'lose' key
+    return got_key
+
+
+def compile_meta(rewards, dones, times, paths, keys, actions):
+    """ Records values straight from env. Returns simple df which will get passed to enrich_meta """
+    meta = pd.DataFrame()
+    
+    meta['KEYS'] = keys
+    meta['dones'] = dones
+    meta['rewards'] = rewards
+    meta['times'] = times
+    meta["path"] = paths
+    meta['action'] = actions
+    
+    return meta
+
+def enrich_meta(meta):
+    """ Takes in simple df of meta values straight from env. adds fields like returns, got_key, etc) """
+    meta['got_key'] = compile_got_key(meta.KEYS.tolist())
+    meta['returns'], meta['time_reward'], meta['state_reward'] = compute_returns(meta.rewards.tolist(), 
+                                                                                 meta.dones.tolist(), 
+                                                                                 meta.times.tolist(), 
+                                                                                 meta.got_key.tolist())
+    # Change these to 'see_orb' and 'see_key'
+    meta['orb'] = backfill(((meta.time_reward==ORB_REWARD)).astype('int')); 
+    meta['key'] = backfill(meta['got_key'])
+    
+    meta['img_weight'] = meta.orb*8 + meta.key*50 + 1
+    
+    dummy_actions = pd.DataFrame([action_array_to_dummies(a) for a in meta.action.tolist()])
+    meta = pd.concat([meta, dummy_actions], axis=1)
+    
+    # When recording actions, forgot to record cols for NON actions as well. 
+    # Should be incorporated w action_array_to_dummmies above
+    def create_nonaction(row, a1, a2): return 1.0 if (row[a1]==0. and row[a2]==0) else 0.
+    meta["NO_FRONTAL"] = meta.apply(lambda row: create_nonaction(row, "FORWARD", "BACKWARD"), axis=1)
+    meta["NO_CAMERA"] = meta.apply(lambda row: create_nonaction(row, "CAMERA_LEFT", "CAMERA_RIGHT"), axis=1)
+    meta["NO_SIDE"] = meta.apply(lambda row: create_nonaction(row, "LEFT", "RIGHT"), axis=1)
+    meta["NO_JUMP"] = meta.apply(lambda row: create_nonaction(row, "JUMP", "JUMP"), axis=1)
+    
+    meta = meta[meta.path != '']
+
+    return meta
+
+# Takes in a series or array or list, backfills the one as many times as indicated. Used to denote the imgs leading 
+# up to an event. Same logic as return discounting, except don't actually want to discount. All imgs w object of interest
+# are equally valuable to us.
+
+def backfill(s):
+    N_BACKFILL = 15
+    s = list(s); 
+    s.reverse()
+    b = []; v = 0;
+    for r in s:
+        if r == 1: 
+            ix=N_BACKFILL
+            v = 1
+        
+        b.append(v)
+        if v==1: 
+            ix-=1
+            if ix==0: v=0
+    b.reverse()
+    return b  
+
 ######################################
 # Retrieving meta
 META_PATH = "meta.pkl"
@@ -105,7 +202,6 @@ def compile_lstm_in(meta, z_seq):
 
 N_ACTIONS = 7;
 
-s = nn.Softmax()
 class Controller(nn.Module):
     def __init__(self):
         super().__init__()
@@ -480,6 +576,10 @@ def generate_flipped_sine(L,N):
     return seq
 
 
+ORB_REWARD = .25
+KEY_REWARD = 2.0
+TIMESTEP_NEG_REWARD = -0.0005
+
 def compute_returns(rewards, dones, times, got_key):
     # Add time rewards to reward
     rewards = np.copy(rewards); dones=np.copy(dones); times=np.copy(times)
@@ -503,15 +603,13 @@ def compute_returns(rewards, dones, times, got_key):
         if i < (len(rewards)-1) and rewards[i+1]==1.0: r1=0.#reset to zero when go to new floor
         else: 
             #r = .5 if rewards[i]==1.0 else rewards[i] # Reducing importance of floor completion.
-            r = 2.0 if got_key[i] else (.5 if rewards[i] > 0. else (.25 if time_reward[i] > 0. else -0.0005))
+            r = KEY_REWARD if got_key[i] else (.5 if rewards[i] > 0. else (ORB_REWARD if time_reward[i] > 0. else TIMESTEP_NEG_REWARD))
             #r1 = r + time_reward[i] + r2 * GAMMA
             r1 = r + r2 * GAMMA
         R.append(np.round(r1, 4))
         r2=r1
     rewards.reverse(); R.reverse(); time_reward=np.flip(time_reward);
-    return pd.DataFrame({"state_reward":rewards, 
-                         "time_reward": time_reward, 
-                         "returns":R})
+    return R, time_reward, rewards
 
 
 # helper functions to toggle btwn trainable and not trainable. Sets requires_grad on and off.

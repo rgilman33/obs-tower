@@ -3,6 +3,9 @@ git lfs track "*.torch"
 git lfs migrate blah blah
 
 
+5.21
+locally added apparatus so agent can gather data. next, send back to gcp for data gather and training
+
 5.19
 currently at slightly above 3, or higher, oscillates though. probs very skewed. watched vid (27) agent did well, both episodes ended bc agent didn't go for key, despite key being in easy to see and find location. we should increase returns on key. also the same going backwards nonsense. 
 
